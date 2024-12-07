@@ -1,4 +1,3 @@
-
 from typing import Any
 import obspython as obs
 import re
@@ -6,24 +5,35 @@ import os
 
 
 class AimpPlayer:
-    def __init__(self, text_source_name='AIMP: Now Playing', file_path='C:/Users/faks/Documents/AIMP/now_playing.txt'):
-        if not text_source_name or not re.match(r'^[\w\s:]+$', text_source_name):
-            obs.script_log(obs.LOG_WARNING, "Invalid text source name provided. Defaulting to 'AIMP: Now Playing'.")
-            self.text_source_name = 'AIMP: Now Playing'
-        else:
-            self.text_source_name = text_source_name
+    def __init__(
+            self,
+            text_source_name='AIMP: Now Playing',
+            now_playing_file='C:/Users/faks/Documents/AIMP/now_playing.txt',
+            state_file='C:/Users/faks/Documents/AIMP/state_detector.txt',
+    ):
+        # Validate and set the text source name
+        self.text_source_name = text_source_name if re.match(r'^[\w\s:]+$', text_source_name) else 'AIMP: Now Playing'
+        if not re.match(r'^[\w\s:]+$', text_source_name):
+            obs.script_log(obs.LOG_WARNING, "Invalid text source name. Defaulting to 'AIMP: Now Playing'.")
 
-        if not os.path.isfile(file_path) or not re.match(r'^[A-Za-z0-9_\-/:\.]+$', file_path) or self.is_sensitive_path(
-                file_path):
-            obs.script_log(obs.LOG_WARNING,
-                           "Invalid or sensitive file path provided. Defaulting to a safe default path.")
-            self.file_path = 'C:/Users/faks/Documents/AIMP/now_playing.txt'
-        else:
-            self.file_path = file_path
+        # Validate and set the now playing file path
+        self.now_playing_file = self.validate_file_path(now_playing_file,
+                                                        'C:/Users/faks/Documents/AIMP/now_playing.txt')
+
+        # Validate and set the state file path
+        self.state_file = self.validate_file_path(state_file, 'C:/Users/faks/Documents/AIMP/state_detector.txt')
+
+    @staticmethod
+    def validate_file_path(file_path, default_path):
+        """Validate the file path and return a safe default if invalid."""
+        if not os.path.isfile(file_path) or AimpPlayer.is_sensitive_path(file_path):
+            obs.script_log(obs.LOG_WARNING, f"Invalid or sensitive file path. Using default: {default_path}")
+            return default_path
+        return file_path
 
     @staticmethod
     def is_sensitive_path(path):
-        # Check if the path points to a sensitive system directory or file
+        """Check if the path points to a sensitive system directory or file."""
         sensitive_paths = [
             'C:/Windows',
             'C:/Windows/System32',
@@ -31,7 +41,6 @@ class AimpPlayer:
             '/bin',
             '/usr'
         ]
-
         normalized_path = os.path.normpath(path).lower()
         for sensitive in sensitive_paths:
             if normalized_path.startswith(os.path.normpath(sensitive).lower()):
@@ -39,13 +48,14 @@ class AimpPlayer:
         return False
 
     def validate_text_source_name(self):
-        # Ensure text_source_name is from a trusted source or matches expected patterns
+        """Validate the text source name."""
         allowed_sources = ['AIMP: Now Playing', 'Another Trusted Source']
         if self.text_source_name not in allowed_sources:
-            obs.script_log(obs.LOG_WARNING, "Text source name is not trusted. Defaulting to 'AIMP: Now Playing'.")
+            obs.script_log(obs.LOG_WARNING, "Text source name not trusted. Defaulting to 'AIMP: Now Playing'.")
             self.text_source_name = 'AIMP: Now Playing'
 
     def update_text_source(self, title):
+        """Update the OBS text source with the given title."""
         self.validate_text_source_name()
         text_source = obs.obs_get_source_by_name(self.text_source_name)
         if text_source is not None:
@@ -58,30 +68,38 @@ class AimpPlayer:
         else:
             obs.script_log(obs.LOG_WARNING, "Text source not found. Please check the OBS configuration.")
 
-    def read_now_playing_file(self):
+    def read_file(self, file_path):
+        """Read and return the content of a file, handling errors gracefully."""
         try:
-            with open(self.file_path, "r") as file:
+            with open(file_path, "r") as file:
                 content = file.read().strip()  # Strip trailing whitespace
                 if content:
                     return content
                 else:
-                    obs.script_log(obs.LOG_INFO, "The file is empty. No song is currently playing.")
-                    return "No song playing"
+                    obs.script_log(obs.LOG_INFO, f"The file {file_path} is empty.")
+                    return "No data"
         except FileNotFoundError:
-            obs.script_log(obs.LOG_WARNING, "The specified file was not found. Please check the file path.")
+            obs.script_log(obs.LOG_WARNING, f"The file {file_path} was not found.")
         except PermissionError:
-            obs.script_log(obs.LOG_ERROR,
-                           "Permission denied when accessing the specified file. Please check file permissions.")
+            obs.script_log(obs.LOG_ERROR, f"Permission denied for file: {file_path}.")
         except IsADirectoryError:
-            obs.script_log(obs.LOG_ERROR, "Expected a file but found a directory. Please provide a valid file path.")
+            obs.script_log(obs.LOG_ERROR, f"Expected a file but found a directory: {file_path}.")
         except OSError:
-            obs.script_log(obs.LOG_ERROR,
-                           "An OS error occurred while accessing the file. Please check the file path and permissions.")
-        return "No song playing"
+            obs.script_log(obs.LOG_ERROR, f"An OS error occurred while accessing the file: {file_path}.")
+        return "Error reading file"
 
     def tick(self):
-        get_playing_now = self.read_now_playing_file()
-        self.update_text_source(get_playing_now)
+        """Read the current playing song and state, and update the OBS text source."""
+        now_playing = self.read_file(self.now_playing_file)
+        state = self.read_file(self.state_file)
+
+        # Combine the song title and state
+        if state in ["Stopped"]:
+            combined_text = ''
+        else:
+            combined_text = f"{now_playing}"
+
+        self.update_text_source(combined_text)
 
 
 # Create an instance of the AimpPlayer class
@@ -92,7 +110,8 @@ aimpPlayer = AimpPlayer()
 def script_properties():
     props = obs.obs_properties_create()
     obs.obs_properties_add_text(props, 'text_source_name', 'Text Source Name', obs.OBS_TEXT_DEFAULT)
-    obs.obs_properties_add_text(props, 'file_path', 'File Path', obs.OBS_TEXT_DEFAULT)
+    obs.obs_properties_add_text(props, 'now_playing_file', 'Now Playing File Path', obs.OBS_TEXT_DEFAULT)
+    obs.obs_properties_add_text(props, 'state_file', 'State File Path', obs.OBS_TEXT_DEFAULT)
 
     return props
 

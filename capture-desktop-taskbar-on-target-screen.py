@@ -2,7 +2,7 @@ import os
 import mss
 from PIL import Image
 
-get_screen_id = 1
+get_screen_id = 3
 get_image_width = 37
 get_image_height = 37
 get_image_offset_x = 935

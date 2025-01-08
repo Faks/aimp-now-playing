@@ -5,6 +5,8 @@ import numpy as np
 import asyncio
 import time
 import mss
+import os
+import sys
 
 get_screen_id = 3
 get_image_width = 37
@@ -28,12 +30,18 @@ class AIMPStateDetector:
             "playing": self.load_icon('resources/img/playing_icon.png')
         }
 
+    def resource_path(self, relative_path):
+        if hasattr(sys, '_MEIPASS'):
+            return os.path.join(sys._MEIPASS, relative_path)
+        return os.path.join(os.path.abspath("."), relative_path)
+
     def load_icon(self, icon_path):
         """Load icon and handle errors if the file is not found."""
+        full_path = self.resource_path(icon_path)
         try:
-            return Image.open(icon_path)
+            return Image.open(full_path)
         except FileNotFoundError:
-            print(f"Error: Icon {icon_path} not found.")
+            print(f"Error: Icon {full_path} not found.")
             return None
 
     def capture_taskbar_region(self):
